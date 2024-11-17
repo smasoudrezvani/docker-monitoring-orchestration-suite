@@ -1,0 +1,391 @@
+networks:
+  airflow_net:
+    driver: bridge
+    ipam:
+      config:
+      - subnet: 192.168.239.0/24
+  grafana_net:
+    driver: bridge
+    ipam:
+      config:
+      - subnet: 192.168.245.0/24 79,11         Bot
+  mysql_net:
+    driver: bridge
+    ipam:
+      config:
+      - subnet: 192.168.243.0/24
+  pmm_net:
+    driver: bridge
+    ipam:
+      config:
+      - subnet: 192.168.244.0/24
+services:
+  airflow-cli:
+    command:
+    - bash
+    - -c
+    - airflow
+    depends_on: &id001
+      postgres: &id002
+        condition: service_healthy
+      redis: &id003
+        condition: service_healthy
+    environment:
+      AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session
+      AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0
+      AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+      AIRFLOW__CORE__DEFAULT_TIMEZONE: Asia/Tehran
+      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+      AIRFLOW__CORE__FERNET_KEY: ''
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'true'
+      AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
+      TZ: Asia/Tehran
+      _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
+    image: ${AIRFLOW_IMAGE_NAME:-apache/airflow:2.7.1}
+    networks:
+    - airflow_net
+    profiles:
+    - debug
+    user: ${AIRFLOW_UID:-50000}:0
+    volumes: &id004
+    - ${AIRFLOW_PROJ_DIR:-.}/dags:/opt/airflow/dags
+    - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs
+    - ${AIRFLOW_PROJ_DIR:-.}/config:/opt/airflow/config
+    - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
+    - codes:/codes
+    - outputs:/outputs
+  airflow-init:
+    command:
+    - -c
+    - "function ver() {\n  printf \"%04d%04d%04d%04d\" $${1//./ }\n}\nairflow_version=$$(AIRFLOW__LOGGING__LOGGING_LEVEL=INFO\
+      \ && gosu airflow airflow version)\nairflow_version_comparable=$$(ver $${airflow_version})\n\
+      min_airflow_version=2.2.0\nmin_airflow_version_comparable=$$(ver $${min_airflow_version})\n\
+      if (( airflow_version_comparable < min_airflow_version_comparable )); then\n\
+      \  echo\n  echo -e \"\\033[1;31mERROR!!!: Too old Airflow version $${airflow_version}!\\\
+      e[0m\"\n  echo \"The minimum Airflow version supported: $${min_airflow_version}.\
+      \ Only use this or higher!\"\n  echo\n  exit 1\nfi\nif [[ -z \"${AIRFLOW_UID}\"\
+      \ ]]; then\n  echo\n  echo -e \"\\033[1;33mWARNING!!!: AIRFLOW_UID not set!\\\
+      e[0m\"\n  echo \"If you are on Linux, you SHOULD follow the instructions below\
+      \ to set \"\n  echo \"AIRFLOW_UID environment variable, otherwise files will\
+      \ be owned by root.\"\n  echo \"For other operating systems you can get rid\
+      \ of the warning with manually created .env file:\"\n  echo \"    See: https://airflow.apache.org/docs/apache-airflow/stable/howto/docker-compose/index.html#setting-the-right-airflow-user\"\
+      \n  echo\nfi\none_meg=1048576\nmem_available=$$(($$(getconf _PHYS_PAGES) * $$(getconf\
+      \ PAGE_SIZE) / one_meg))\ncpus_available=$$(grep -cE 'cpu[0-9]+' /proc/stat)\n\
+      disk_available=$$(df / | tail -1 | awk '{print $$4}')\nwarning_resources=\"\
+      false\"\nif (( mem_available < 4000 )) ; then\n  echo\n  echo -e \"\\033[1;33mWARNING!!!:\
+      \ Not enough memory available for Docker.\\e[0m\"\n  echo \"At least 4GB of\
+      \ memory required. You have $$(numfmt --to iec $$((mem_available * one_meg)))\"\
+      \n  echo\n  warning_resources=\"true\"\nfi\nif (( cpus_available < 2 )); then\n\
+      \  echo\n  echo -e \"\\033[1;33mWARNING!!!: Not enough CPUS available for Docker.\\\
+      e[0m\"\n  echo \"At least 2 CPUs recommended. You have $${cpus_available}\"\n\
+      \  echo\n  warning_resources=\"true\"\nfi\nif (( disk_available < one_meg *\
+      \ 10 )); then\n  echo\n  echo -e \"\\033[1;33mWARNING!!!: Not enough Disk space\
+      \ available for Docker.\\e[0m\"\n  echo \"At least 10 GBs recommended. You have\
+      \ $$(numfmt --to iec $$((disk_available * 1024 )))\"\n  echo\n  warning_resources=\"\
+      true\"\nfi\nif [[ $${warning_resources} == \"true\" ]]; then\n  echo\n  echo\
+      \ -e \"\\033[1;33mWARNING!!!: You have not enough resources to run Airflow (see\
+      \ above)!\\e[0m\"\n  echo \"Please follow the instructions to increase amount\
+      \ of resources available:\"\n  echo \"   https://airflow.apache.org/docs/apache-airflow/stable/howto/docker-compose/index.html#before-you-begin\"\
+      \n  echo\nfi\nmkdir -p /sources/logs /sources/dags /sources/plugins\nchown -R\
+      \ \"${AIRFLOW_UID}:0\" /sources/{logs,dags,plugins}\nexec /entrypoint airflow\
+      \ version\n"
+    depends_on: *id001
+    entrypoint: /bin/bash
+    environment:
+      AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session
+      AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0
+      AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+      AIRFLOW__CORE__DEFAULT_TIMEZONE: Asia/Tehran
+      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+      AIRFLOW__CORE__FERNET_KEY: ''
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'true'
+      AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
+      TZ: Asia/Tehran
+      _AIRFLOW_DB_MIGRATE: 'true'
+      _AIRFLOW_WWW_USER_CREATE: 'true'
+      _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD:-airflow}
+      _AIRFLOW_WWW_USER_USERNAME: ${_AIRFLOW_WWW_USER_USERNAME:-airflow}
+      _PIP_ADDITIONAL_REQUIREMENTS: ''
+    image: ${AIRFLOW_IMAGE_NAME:-apache/airflow:2.7.1}
+    networks:
+    - airflow_net
+    user: 0:0
+    volumes:
+    - ${AIRFLOW_PROJ_DIR:-.}:/sources
+  airflow-scheduler:
+    command: scheduler
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      postgres: *id002
+      redis: *id003
+    environment: &id005
+      AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session
+      AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0
+      AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+      AIRFLOW__CORE__DEFAULT_TIMEZONE: Asia/Tehran
+      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+      AIRFLOW__CORE__FERNET_KEY: ''
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'true'
+      AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
+      TZ: Asia/Tehran
+      _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
+    healthcheck:
+      interval: 30s
+      retries: 5
+      start_period: 30s
+      test:
+      - CMD
+      - curl
+      - --fail
+      - http://localhost:8974/health
+      timeout: 10s
+    image: ${AIRFLOW_IMAGE_NAME:-apache/airflow:2.7.1}
+    networks:
+    - airflow_net
+    restart: always
+    user: ${AIRFLOW_UID:-50000}:0
+    volumes: *id004
+  airflow-triggerer:
+    command: triggerer
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      postgres: *id002
+      redis: *id003
+    environment: *id005
+    healthcheck:
+      interval: 30s
+      retries: 5
+      start_period: 30s
+      test:
+      - CMD-SHELL
+      - airflow jobs check --job-type TriggererJob --hostname "$${HOSTNAME}"
+      timeout: 10s
+    image: ${AIRFLOW_IMAGE_NAME:-apache/airflow:2.7.1}
+    networks:
+    - airflow_net
+    restart: always
+    user: ${AIRFLOW_UID:-50000}:0
+    volumes: *id004
+  airflow-webserver:
+    command: webserver
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      postgres: *id002
+      redis: *id003
+    environment: *id005
+    healthcheck:
+      interval: 30s
+      retries: 5
+      start_period: 30s
+      test:
+      - CMD
+      - curl
+      - --fail
+      - http://localhost:8080/health
+      timeout: 10s
+    image: ${AIRFLOW_IMAGE_NAME:-apache/airflow:2.7.1}
+    networks:
+    - airflow_net
+    ports:
+    - 8080:8080
+    restart: always
+    user: ${AIRFLOW_UID:-50000}:0
+    volumes: *id004
+  airflow-worker:
+    command: celery worker
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      postgres: *id002
+      redis: *id003
+    environment:
+      AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session
+      AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0
+      AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+      AIRFLOW__CORE__DEFAULT_TIMEZONE: Asia/Tehran
+      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+      AIRFLOW__CORE__FERNET_KEY: ''
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'true'
+      AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
+      DUMB_INIT_SETSID: '0'
+      TZ: Asia/Tehran
+      _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
+    healthcheck:
+      interval: 30s
+      retries: 5
+      start_period: 30s
+      test:
+      - CMD-SHELL
+      - celery --app airflow.providers.celery.executors.celery_executor.app inspect
+        ping -d "celery@$${HOSTNAME}" || celery --app airflow.executors.celery_executor.app
+        inspect ping -d "celery@$${HOSTNAME}"
+      timeout: 10s
+    image: ${AIRFLOW_IMAGE_NAME:-apache/airflow:2.7.1}
+    networks:
+    - airflow_net
+    restart: always
+    user: ${AIRFLOW_UID:-50000}:0
+    volumes: *id004
+  flower:
+    command: celery flower
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      postgres: *id002
+      redis: *id003
+    environment: *id005
+    healthcheck:
+      interval: 30s
+      retries: 5
+      start_period: 30s
+      test:
+      - CMD
+      - curl
+      - --fail
+      - http://localhost:5555/
+      timeout: 10s
+    image: ${AIRFLOW_IMAGE_NAME:-apache/airflow:2.7.1}
+    networks:
+    - airflow_net
+    ports:
+    - 5555:5555
+    profiles:
+    - flower
+    restart: always
+    user: ${AIRFLOW_UID:-50000}:0
+    volumes: *id004
+  grafana:
+    container_name: grafana
+    image: grafana/grafana
+    ports:
+    - 3000:3000
+    restart: unless-stopped
+    volumes:
+    - grafana-storage:/var/lib/grafana
+  mysql:
+    command:
+    - mysqld
+    - --character-set-server=utf8mb4
+    - --collation-server=utf8mb4_unicode_ci
+    - --default-time-zone=+03:30
+    environment:
+    - MYSQL_DATABASE=data
+    - MYSQL_ROOT_PASSWORD=pass
+    - TZ=Asia/Tehran
+    - PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    - GOSU_VERSION=1.16
+    - MYSQL_MAJOR=innovation
+    - MYSQL_VERSION=8.1.0-1.el8
+    - MYSQL_SHELL_VERSION=8.0.34-1.el8
+    image: mysql:8.1.0
+    networks:
+    - mysql_net
+    ports:
+    - 3306:3306
+    restart: always
+    volumes:
+    - mysql_data:/var/lib/mysql
+  netdata:
+    cap_add:
+    - SYS_PTRACE
+    - SYS_ADMIN
+    container_name: netdata
+    image: netdata/netdata
+    network_mode: host
+    pid: host
+    restart: unless-stopped
+    security_opt:
+    - apparmor:unconfined
+    volumes:
+    - netdataconfig:/etc/netdata
+    - netdatalib:/var/lib/netdata
+    - netdatacache:/var/cache/netdata
+    - /etc/passwd:/host/etc/passwd:ro
+    - /etc/group:/host/etc/group:ro
+    - /etc/localtime:/etc/localtime:ro
+    - /proc:/host/proc:ro
+    - /sys:/host/sys:ro
+    - /etc/os-release:/host/etc/os-release:ro
+    - /var/log:/host/var/log:ro
+    - /var/run/docker.sock:/var/run/docker.sock:ro
+  pmm-server:
+    container_name: pmm_server
+    depends_on:
+    - mysql
+    environment:
+    - PMM_ADMIN_USER=admin
+    - PMM_ADMIN_PASSWORD=admin
+    image: percona/pmm-server:2
+    networks:
+    - pmm_net
+    ports:
+    - 8081:80
+    - 443:443
+    restart: always
+    volumes:
+    - pmm_data:/srv
+  postgres:
+    environment:
+      AIRFLOW__CORE__DEFAULT_TIMEZONE: Asia/Tehran
+      POSTGRES_DB: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_USER: airflow
+      TZ: Asia/Tehran
+    healthcheck:
+      interval: 10s
+      retries: 5
+      start_period: 5s
+      test:
+      - CMD
+      - pg_isready
+      - -U
+      - airflow
+    image: postgres:13
+    networks:
+    - airflow_net
+    restart: always
+    volumes:
+    - postgres-db-volume:/var/lib/postgresql/data
+  redis:
+    expose:
+    - 6379
+    healthcheck:
+      interval: 10s
+      retries: 50
+      start_period: 30s
+      test:
+      - CMD
+      - redis-cli
+      - ping
+      timeout: 30s
+    image: redis:latest
+    networks:
+    - airflow_net
+    restart: always
+version: '3.8'
+volumes:
+  codes: null
+  grafana-storage: {}
+  grafana_data: null
+  mysql_data: null
+  netdatacache: null
+  netdataconfig: null
+  netdatalib: null
+  outputs: null
+  pmm_data: null
+  postgres-db-volume: null

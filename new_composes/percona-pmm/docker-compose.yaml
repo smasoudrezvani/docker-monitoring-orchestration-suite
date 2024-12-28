@@ -1,0 +1,65 @@
+version: '3.3'
+services:
+  pmm-server:
+    image: percona/pmm-server:2
+    container_name: pmm_server
+    restart: always
+    environment:
+      - PMM_ADMIN_USER=admin
+      - PMM_ADMIN_PASSWORD=admin
+    ports:
+      - "8081:80"
+      - "443:443"
+    volumes:
+      - pmm_data:/srv
+    networks:
+      - pmm_net
+  grafana:
+    image: grafana/grafana
+    container_name: grafana
+    restart: always
+    environment:
+      - PATH=/usr/share/grafana/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      - GF_PATHS_CONFIG=/etc/grafana/grafana.ini
+      - GF_PATHS_DATA=/var/lib/grafana
+      - GF_PATHS_HOME=/usr/share/grafana
+      - GF_PATHS_LOGS=/var/log/grafana
+      - GF_PATHS_PLUGINS=/var/lib/grafana/plugins
+      - GF_PATHS_PROVISIONING=/etc/grafana/provisioning
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    networks:
+      - grafana_net
+    depends_on: 
+      - pmm-server
+
+  grafana-skype-alerts:
+    image: grafana-skype-alerts:latest
+    env_file:
+      - .env
+    container_name: skype_notifier
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    networks:
+      - grafana_net
+    depends_on:
+      - grafana
+
+volumes:
+  pmm_data:
+  grafana_data:
+
+networks:
+  pmm_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.0.1.0/24
+  grafana_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.0.2.0/24
